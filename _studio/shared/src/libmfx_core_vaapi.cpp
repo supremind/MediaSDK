@@ -1275,7 +1275,7 @@ void VAAPIVideoCORE::ReleaseHandle()
 //function checks profile and entrypoint and video resolution support
 //On linux specific function!
 mfxStatus VAAPIVideoCORE::IsGuidSupported(const GUID guid,
-                                         mfxVideoParam *par, bool /* isEncoder */)
+                                         mfxVideoParam *par, bool  isEncoder )
 {
     MFX_CHECK(par, MFX_WRN_PARTIAL_ACCELERATION);
     MFX_CHECK(!IsMVCProfile(par->mfx.CodecProfile), MFX_WRN_PARTIAL_ACCELERATION);
@@ -1283,9 +1283,43 @@ mfxStatus VAAPIVideoCORE::IsGuidSupported(const GUID guid,
     MFX_CHECK(m_Display, MFX_ERR_DEVICE_FAILED);
 
 #if VA_CHECK_VERSION(1, 2, 0)
+    VAProfile req_profile = VAProfileNone;
+    VAEntrypoint req_entrypoint = static_cast<VAEntrypoint>(0);
     VaGuidMapper mapper(guid);
-    VAProfile req_profile = mapper.profile;
-    VAEntrypoint req_entrypoint = mapper.entrypoint;
+    //VAProfile req_profile = mapper.profile;
+    //VAEntrypoint req_entrypoint = mapper.entrypoint;
+
+if (isEncoder){
+ req_profile = mapper.profile;
+   req_entrypoint = mapper.entrypoint;
+    }
+   else
+   {
+               switch (par->mfx.CodecId)
+      {
+       case MFX_CODEC_AVC:
+     {
+                     if (par->mfx.CodecProfile == MFX_PROFILE_AVC_CONSTRAINED_BASELINE)
+           {
+                req_profile = VAProfileH264ConstrainedBaseline;
+            }
+            else if (par->mfx.CodecProfile == MFX_PROFILE_AVC_MAIN)
+            {
+                req_profile = VAProfileH264Main;
+            }
+            else if (par->mfx.CodecProfile == MFX_PROFILE_AVC_HIGH)
+           {
+                req_profile = VAProfileH264High;
+            }
+
+            break;
+       }
+        default:
+           return MFX_ERR_UNSUPPORTED;
+        }
+        req_entrypoint = VAEntrypointVLD;
+    }
+
     mfxI32 va_max_num_entrypoints = vaMaxNumEntrypoints(m_Display);
     mfxI32 va_max_num_profiles = vaMaxNumProfiles(m_Display);
     MFX_CHECK_COND(va_max_num_entrypoints && va_max_num_profiles);
@@ -1316,22 +1350,42 @@ mfxStatus VAAPIVideoCORE::IsGuidSupported(const GUID guid,
     auto it_entrypoint = find(va_entrypoints.begin(), va_entrypoints.end(), req_entrypoint);
     MFX_CHECK(it_entrypoint != va_entrypoints.end(), MFX_ERR_UNSUPPORTED);
 
-    VAConfigAttrib attr[] = {{VAConfigAttribMaxPictureWidth,  0},
-                             {VAConfigAttribMaxPictureHeight, 0}};
+   // VAConfigAttrib attr[] = {{VAConfigAttribMaxPictureWidth,  0},
+     //                        {VAConfigAttribMaxPictureHeight, 0}};
+
+     //check encoding maximal resolution.
+   if (isEncoder)
+   {
+        VAConfigAttrib attr[] = {{VAConfigAttribMaxPictureWidth,  0},
+                               {VAConfigAttribMaxPictureHeight, 0}};
+
+    
 
     //ask driver about support
-    va_sts = vaGetConfigAttributes(m_Display, mapper.profile,
-                                   mapper.entrypoint,
-                                   attr, sizeof(attr)/sizeof(*attr));
+   // va_sts = vaGetConfigAttributes(m_Display, mapper.profile, mapper.entrypoint, attr, sizeof(attr)/sizeof(*attr));
+     //ask driver about support
+        va_sts = vaGetConfigAttributes(m_Display, isEncoder ? mapper.profile : req_profile,
+                                      isEncoder ? mapper.entrypoint : req_entrypoint,
+                                       attr, sizeof(attr)/sizeof(*attr));
 
+    //MFX_CHECK(va_sts == VA_STATUS_SUCCESS, MFX_ERR_UNSUPPORTED);
     MFX_CHECK(va_sts == VA_STATUS_SUCCESS, MFX_ERR_UNSUPPORTED);
 
+
     //check resolution video
-    MFX_CHECK(attr[0].value != VA_ATTRIB_NOT_SUPPORTED, MFX_ERR_UNSUPPORTED);
-    MFX_CHECK(attr[1].value != VA_ATTRIB_NOT_SUPPORTED, MFX_ERR_UNSUPPORTED);
-    MFX_CHECK_COND(attr[0].value && attr[1].value);
-    MFX_CHECK(attr[0].value >= par->mfx.FrameInfo.Width, MFX_ERR_UNSUPPORTED);
+    //MFX_CHECK(attr[0].value != VA_ATTRIB_NOT_SUPPORTED, MFX_ERR_UNSUPPORTED);
+    //MFX_CHECK(attr[1].value != VA_ATTRIB_NOT_SUPPORTED, MFX_ERR_UNSUPPORTED);
+    //MFX_CHECK_COND(attr[0].value && attr[1].value);
+    //MFX_CHECK(attr[0].value >= par->mfx.FrameInfo.Width, MFX_ERR_UNSUPPORTED);
+    //MFX_CHECK(attr[1].value >= par->mfx.FrameInfo.Height, MFX_ERR_UNSUPPORTED);
+
+    //check resolution video
+       MFX_CHECK(attr[0].value != VA_ATTRIB_NOT_SUPPORTED, MFX_ERR_UNSUPPORTED);
+       MFX_CHECK(attr[1].value != VA_ATTRIB_NOT_SUPPORTED, MFX_ERR_UNSUPPORTED);
+               MFX_CHECK_COND(attr[0].value && attr[1].value);
+       MFX_CHECK(attr[0].value >= par->mfx.FrameInfo.Width, MFX_ERR_UNSUPPORTED);
     MFX_CHECK(attr[1].value >= par->mfx.FrameInfo.Height, MFX_ERR_UNSUPPORTED);
+   }
 
     return MFX_ERR_NONE;
 #else
